@@ -55,9 +55,6 @@ fn main() {
                 let content = fs::read_to_string(file_path)
                     .expect("Should have been able to read the file");
 
-                let pairs = QParser::parse(Rule::file, &content)
-                    .unwrap_or_else(|e| panic!("Error parsing file: {}", e));
-
                 let ast = build_ast(pairs);
                 
                 println!("Running interpreter...");

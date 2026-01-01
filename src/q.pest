@@ -1,9 +1,9 @@
 // Q language grammar for pest
 
 // The top-level rule is 'file', which is a sequence of statements.
-file = { SOI ~ statement* ~ EOI }
+file = { SOI ~ (statement | comment)* ~ EOI }
 
-statement = { system_include | system_init | system_set | system_log | function_decl | system_exec | comment }
+statement = { system_include | system_init | system_set | system_log | function_decl | system_exec }
 
 // Whitespace and comments
 WHITESPACE = _{" " | "\t" | "\n" | "\r"}
@@ -47,7 +47,7 @@ expression = { (value | argument) ~ ("&" ~ (value | argument))* }
 function_decl = { "function" ~ identifier ~ "(" ~ params ~ ")" ~ "{" ~ statements ~ "}" ~ ";"? }
 params = { (param ~ ("," ~ param)*)? }
 param = { identifier ~ "in" ~ datatype }
-statements = { statement* }
+statements = { (statement | comment)* }
 
 // System Exec
 system_exec = { "system.exec" ~ "{" ~ exec_pairs ~ "}" ~ ";"? }
