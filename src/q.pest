@@ -1,0 +1,58 @@
+// Q language grammar for pest
+
+// The top-level rule is 'file', which is a sequence of statements.
+file = { SOI ~ statement* ~ EOI }
+
+statement = { system_include | system_init | system_set | system_log | function_decl | system_exec | comment }
+
+// Whitespace and comments
+WHITESPACE = _{" " | "\t" | "\n" | "\r"}
+comment = { "//" ~ (!("\n" | "\r") ~ ANY)* }
+
+// System Include
+system_include = { "system.include" ~ "{" ~ include_block ~ "}" }
+include_block = { (from_import ~ ("," ~ from_import)*)? }
+from_import = { "from" ~ string ~ "import" ~ "{" ~ import_list ~ "}" }
+string = @{ "\"" ~ (char)* ~ "\""}
+char = { !("\"" | "\\") ~ ANY | "\\" ~ ANY }
+import_list = { (import_item ~ ("," ~ import_item)*)? }
+import_item = { string ~ ":" ~ identifier ~ "::" ~ identifier }
+
+// System Init
+system_init = { "system.init" ~ "{" ~ init_pairs ~ "}" ~ ";"? }
+init_pairs = { (init_pair ~ ("," ~ init_pair)*)? }
+init_pair = { ("\"type\"" ~ ":" ~ variable_type) | ("\"name\"" ~ ":" ~ identifier) | ("\"datatype\"" ~ ":" ~ datatype) | ("\"value\"" ~ ":" ~ value) }
+variable_type = { "variable" | "array" }
+datatype = { "string" | "number" | "bool" }
+value = { string | number | boolean }
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+boolean = { "true" | "false" }
+identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// System Set
+system_set = { "system.set" ~ "{" ~ set_pairs ~ "}" ~ ";"? }
+set_pairs = { (set_pair ~ ("," ~ set_pair)*)? }
+set_pair = { ("\"name\"" ~ ":" ~ identifier) | ("\"value\"" ~ ":" ~ value) }
+
+// System Log
+system_log = { "system.log" ~ "{" ~ log_pairs ~ "}" ~ ";"? }
+log_pairs = { (log_pair ~ ("," ~ log_pair)*)? }
+log_pair = { ("\"type\"" ~ ":" ~ log_type) | ("arguments" ~ "{" ~ arguments ~ "}") | ("\"message\"" ~ ":" ~ expression) }
+log_type = { "info" | "warn" | "error" }
+arguments = { (argument ~ ("," ~ argument)*)? }
+argument = { identifier ~ "." ~ ("value" | "type") }
+expression = { (value | argument) ~ ("&" ~ (value | argument))* }
+
+// Function Declaration
+function_decl = { "function" ~ identifier ~ "(" ~ params ~ ")" ~ "{" ~ statements ~ "}" ~ ";"? }
+params = { (param ~ ("," ~ param)*)? }
+param = { identifier ~ "in" ~ datatype }
+statements = { statement* }
+
+// System Exec
+system_exec = { "system.exec" ~ "{" ~ exec_pairs ~ "}" ~ ";"? }
+exec_pairs = { (exec_pair ~ ("," ~ exec_pair)*)? }
+exec_pair = { ("\"type\"" ~ ":" ~ exec_type) | ("\"name\"" ~ ":" ~ identifier) | ("parameters" ~ "{" ~ exec_params ~ "}") }
+exec_type = { "function" }
+exec_params = { (exec_param ~ ("," ~ exec_param)*)? }
+exec_param = { identifier ~ "=>" ~ value }
