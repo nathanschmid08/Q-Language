@@ -33,6 +33,7 @@ impl Interpreter {
     }
 
     fn execute_statement(&mut self, stmt: &Statement) {
+        println!("Executing: {:?}", stmt);
         match stmt {
             Statement::SystemInit(var_decl) => {
                 let value = var_decl.value.as_ref().map_or(Value::Null, |v| self.evaluate_expression(v));

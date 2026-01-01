@@ -89,13 +89,19 @@ fn main() {
     }
 }
 
-fn build_ast(pairs: pest::iterators::Pairs<Rule>) -> Vec<AstNode> {
-    pairs
+fn build_ast(mut pairs: pest::iterators::Pairs<Rule>) -> Vec<AstNode> {
+    let file = pairs.next().unwrap();
+    if file.as_rule() != Rule::file {
+        return vec![];
+    }
+
+    file.into_inner()
         .filter_map(|pair| match pair.as_rule() {
-            Rule::statement => Some(AstNode::Statement(build_statement(pair))),
+            Rule::statement => build_statement(pair).map(AstNode::Statement),
             Rule::EOI => None,
             Rule::comment => None,
             _ => {
+                // This will now correctly report unhandled rules inside the file
                 println!("unhandled rule: {:?}", pair.as_rule());
                 None
             }
@@ -103,7 +109,7 @@ fn build_ast(pairs: pest::iterators::Pairs<Rule>) -> Vec<AstNode> {
         .collect()
 }
 
-fn build_statement(pair: Pair<Rule>) -> Statement {
+fn build_statement(pair: Pair<Rule>) -> Option<Statement> {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
         Rule::system_init => {
@@ -130,11 +136,11 @@ fn build_statement(pair: Pair<Rule>) -> Statement {
                     }
                 }
             }
-            Statement::SystemInit(VariableDeclaration {
+            Some(Statement::SystemInit(VariableDeclaration {
                 name: name.unwrap(),
                 data_type: data_type.unwrap(),
                 value,
-            })
+            }))
         }
         Rule::system_set => {
             let mut name = None;
@@ -151,10 +157,10 @@ fn build_statement(pair: Pair<Rule>) -> Statement {
                     }
                 }
             }
-            Statement::SystemSet(VariableAssignment {
+            Some(Statement::SystemSet(VariableAssignment {
                 name: name.unwrap(),
                 value: value.unwrap(),
-            })
+            }))
         }
         Rule::system_log => {
             let mut log_type = None;
@@ -172,10 +178,10 @@ fn build_statement(pair: Pair<Rule>) -> Statement {
                     }
                 }
             }
-            Statement::SystemLog(Log {
+            Some(Statement::SystemLog(Log {
                 log_type: log_type.unwrap(),
                 message: message.unwrap(),
-            })
+            }))
         }
         Rule::function_decl => {
             let mut inner_rules = inner.into_inner();
@@ -195,13 +201,13 @@ fn build_statement(pair: Pair<Rule>) -> Statement {
                 (param_name, param_type)
             }).collect();
 
-            let body = body_pair.into_inner().map(build_statement).collect();
+            let body = body_pair.into_inner().filter_map(build_statement).collect();
 
-            Statement::FunctionDeclaration(FunctionDeclaration {
+            Some(Statement::FunctionDeclaration(FunctionDeclaration {
                 name,
                 params,
                 body,
-            })
+            }))
         }
         Rule::system_exec => {
             let mut name = None;
@@ -225,13 +231,13 @@ fn build_statement(pair: Pair<Rule>) -> Statement {
                     }
                 }
             }
-            Statement::SystemExec(FunctionCall {
+            Some(Statement::SystemExec(FunctionCall {
                 name: name.unwrap(),
                 args,
-            })
+            }))
         }
-        Rule::comment => panic!("Should be filtered out"),
-        Rule::system_include => Statement::SystemInclude, // Placeholder
+        Rule::comment => None,
+        Rule::system_include => Some(Statement::SystemInclude), // Placeholder
         _ => todo!("unhandled statement: {:?}", inner.as_rule()),
     }
 }
@@ -242,8 +248,8 @@ fn build_expression(pair: Pair<Rule>) -> Expression {
             let inner = pair.into_inner().next().unwrap();
             match inner.as_rule() {
                 Rule::string => {
-                    let inner_str = inner.into_inner().next().map_or("", |p| p.as_str());
-                    Expression::Value(Value::String(inner_str.to_string()))
+                    let s = inner.as_str();
+                    Expression::Value(Value::String(s[1..s.len()-1].to_string()))
                 }
                 Rule::number => Expression::Value(Value::Number(inner.as_str().parse().unwrap())),
                 Rule::boolean => Expression::Value(Value::Bool(inner.as_str().parse().unwrap())),

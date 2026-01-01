@@ -97,6 +97,7 @@ I have made significant progress on the Q language compiler. Here is a summary o
 *   **AST Builder:** Implemented the logic in `src/main.rs` to parse the Q code and transform it into an AST.
 *   **Compiler Errors Fixed:** Addressed and fixed several batches of compilation errors.
 *   **Interpreter:** Implemented a basic interpreter in `src/interpreter.rs` that can walk the AST and execute the Q program. The interpreter supports variables, assignments, logging, and function calls.
+*   **Bug Fixes:** Fixed an issue where the interpreter would not produce any output due to an error in the AST building process. Fixed a panic that occurred when parsing comments. Fixed a bug that caused string literals to be parsed as empty strings.
 
 ## How to Run
 
