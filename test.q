@@ -1,5 +1,20 @@
 // test.q
 
+system.log{
+    "type": info,
+    "message": "This is an info"
+};
+
+system.log{
+    "type": warn,
+    "message": "This is an warning"
+};
+
+system.log{
+    "type": error,
+    "message": "This is an error"
+};
+
 system.init{
     "type": variable,
     "name": my_var,

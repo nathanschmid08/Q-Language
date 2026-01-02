@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use crate::ast::*;
+use colored::*;
 
 pub struct Interpreter {
     variables: HashMap<String, Value>,
@@ -48,7 +49,14 @@ impl Interpreter {
             }
             Statement::SystemLog(log) => {
                 let message = self.evaluate_expression(&log.message);
-                println!("[{}] {}", log.log_type, message.to_string());
+                let log_type_lower = log.log_type.to_lowercase();
+                let colored_type = match log_type_lower.as_str() {
+                    "info" => log.log_type.blue().bold(),
+                    "warn" => log.log_type.yellow().bold(),
+                    "error" => log.log_type.red().bold(),
+                    _ => log.log_type.white(),
+                };
+                println!("[{}] {}", colored_type, message.to_string());
             }
             Statement::FunctionDeclaration(func_decl) => {
                 self.functions.insert(func_decl.name.clone(), func_decl.clone());
