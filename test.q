@@ -36,7 +36,7 @@ system.exec{
 
 system.set{
     "name": my_var,
-    "value": "Q is awesome!"
+    "value": "Q is awesome and super!"
 };
 
 system.log{

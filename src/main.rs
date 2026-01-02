@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 
 use clap::{Parser as ClapParser, Subcommand};
@@ -60,27 +60,52 @@ fn main() {
             let pairs = QParser::parse(Rule::file, &content).expect("Failed to parse");
             let ast = build_ast(pairs);
 
-            let serialized_ast = serde_json::to_string(&ast).expect("Failed to serialize AST");
-            let output_path = Path::new(file).with_extension("q.out");
-            let mut output_file = File::create(&output_path).expect("Failed to create output file");
-            output_file
-                .write_all(serialized_ast.as_bytes())
-                .expect("Failed to write to output file");
+            // Create output folder: {filename}.bin/
+            let input_path = Path::new(file);
+            let output_dir = input_path.with_extension("bin");
+            
+            // Create the directory if it doesn't exist
+            fs::create_dir_all(&output_dir).expect("Failed to create output directory");
 
-            println!("Successfully built to {}", output_path.display());
+            // Write AST to ast.bin in binary format
+            let serialized_ast = bincode::serialize(&ast).expect("Failed to serialize AST");
+            let ast_path = output_dir.join("ast.bin");
+            let mut ast_file = File::create(&ast_path).expect("Failed to create AST file");
+            ast_file
+                .write_all(&serialized_ast)
+                .expect("Failed to write to AST file");
+
+            // Create a manifest file with metadata (still JSON for readability, but could be binary too)
+            let manifest = serde_json::json!({
+                "source_file": input_path.file_name().unwrap().to_string_lossy(),
+                "version": "0.1.0"
+            });
+            let manifest_path = output_dir.join("manifest.json");
+            let mut manifest_file = File::create(&manifest_path).expect("Failed to create manifest file");
+            manifest_file
+                .write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+                .expect("Failed to write to manifest file");
+
+            println!("Successfully built to {}", output_dir.display());
 
             if *log {
                 println!("With logging enabled.");
             }
         }
         Commands::Run { file } => {
-            let build_path = Path::new(file).with_extension("q.out");
-            println!("Running build: {}", build_path.display());
+            let build_dir = Path::new(file).with_extension("bin");
+            println!("Running build: {}", build_dir.display());
 
-            let content = fs::read_to_string(&build_path)
+            let ast_path = build_dir.join("ast.bin");
+            let mut ast_file = File::open(&ast_path)
                 .expect("Should have been able to read the build artifact");
             
-            let ast: Vec<AstNode> = serde_json::from_str(&content).expect("Failed to deserialize AST");
+            let mut binary_data = Vec::new();
+            ast_file.read_to_end(&mut binary_data)
+                .expect("Failed to read binary data");
+            
+            let ast: Vec<AstNode> = bincode::deserialize(&binary_data)
+                .expect("Failed to deserialize AST");
 
             let mut interpreter = Interpreter::new();
             interpreter.interpret(&ast);

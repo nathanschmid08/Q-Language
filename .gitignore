@@ -3,3 +3,6 @@
 test.q
 
 test.q.out
+
+*.bin/
+*.q.out
