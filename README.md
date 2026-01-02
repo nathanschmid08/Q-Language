@@ -1,5 +1,11 @@
 # The Q Programming Language
 
+## Run
+
+```
+➜  Q-Language git:(main) ✗ cargo install --path . --force
+```
+
 # Quentin Compilor
 
 ```

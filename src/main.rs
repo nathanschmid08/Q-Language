@@ -2,7 +2,7 @@ use std::fs;
 
 use clap::{Parser as ClapParser, Subcommand};
 use pest::iterators::Pair;
-use pest::Parser as PestParser;
+use pest::Parser;
 use pest_derive::Parser;
 
 mod ast;
@@ -55,6 +55,7 @@ fn main() {
                 let content = fs::read_to_string(file_path)
                     .expect("Should have been able to read the file");
 
+                let pairs = QParser::parse(Rule::file, &content).expect("Failed to parse");
                 let ast = build_ast(pairs);
                 
                 println!("Running interpreter...");
