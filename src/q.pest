@@ -3,11 +3,11 @@
 // The top-level rule is 'file', which is a sequence of statements.
 file = { SOI ~ (statement | comment)* ~ EOI }
 
-statement = { system_include | system_init | system_set | system_log | function_decl | system_exec }
+statement = { system_include | system_init | system_set | system_log | function_decl | system_exec | return_statement }
 
 // Whitespace and comments
-WHITESPACE = _{" " | "\t" | "\n" | "\r"}
-comment = { "//" ~ (!("\n" | "\r") ~ ANY)* }
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+comment = @{ "//" ~ (!("\n" | "\r") ~ ANY)* }
 
 // System Include
 system_include = { "system.include" ~ "{" ~ include_block ~ "}" }
@@ -24,9 +24,10 @@ init_pairs = { (init_pair ~ ("," ~ init_pair)*)? }
 init_pair = { ("\"type\"" ~ ":" ~ variable_type) | ("\"name\"" ~ ":" ~ identifier) | ("\"datatype\"" ~ ":" ~ datatype) | ("\"value\"" ~ ":" ~ value) }
 variable_type = { "variable" | "array" }
 datatype = { "string" | "number" | "bool" }
-value = { string | number | boolean }
+value = { string | number | boolean | null }
 number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 boolean = { "true" | "false" }
+null = { "null" }
 identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 
 // System Set
@@ -56,3 +57,6 @@ exec_pair = { ("\"type\"" ~ ":" ~ exec_type) | ("\"name\"" ~ ":" ~ identifier) |
 exec_type = { "function" }
 exec_params = { (exec_param ~ ("," ~ exec_param)*)? }
 exec_param = { identifier ~ "=>" ~ value }
+
+// Return Statement
+return_statement = { "return" ~ expression ~ ";"? }

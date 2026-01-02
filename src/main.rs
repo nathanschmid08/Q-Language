@@ -1,9 +1,12 @@
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::Path;
 
 use clap::{Parser as ClapParser, Subcommand};
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
+use serde_json;
 
 mod ast;
 mod interpreter;
@@ -29,14 +32,14 @@ enum Commands {
     /// Build a Q file or project
     Build {
         /// The path to the Q file to build
-        file: Option<String>,
+        file: String,
         #[arg(long)]
         log: bool,
     },
-    /// Run the latest build
+    /// Run a built Q file
     Run {
-        /// The name of the build to run
-        name: Option<String>,
+        /// The path to the Q file to run
+        file: String,
     },
     /// Clear the build cache
     Clear {
@@ -50,32 +53,37 @@ fn main() {
 
     match &cli.command {
         Commands::Build { file, log } => {
-            if let Some(file_path) = file {
-                println!("Building file: {}", file_path);
-                let content = fs::read_to_string(file_path)
-                    .expect("Should have been able to read the file");
+            println!("Building file: {}", file);
+            let content =
+                fs::read_to_string(file).expect("Should have been able to read the file");
 
-                let pairs = QParser::parse(Rule::file, &content).expect("Failed to parse");
-                let ast = build_ast(pairs);
-                
-                println!("Running interpreter...");
-                let mut interpreter = Interpreter::new();
-                interpreter.interpret(&ast);
+            let pairs = QParser::parse(Rule::file, &content).expect("Failed to parse");
+            let ast = build_ast(pairs);
 
+            let serialized_ast = serde_json::to_string(&ast).expect("Failed to serialize AST");
+            let output_path = Path::new(file).with_extension("q.out");
+            let mut output_file = File::create(&output_path).expect("Failed to create output file");
+            output_file
+                .write_all(serialized_ast.as_bytes())
+                .expect("Failed to write to output file");
 
-            } else {
-                println!("Building the whole project...");
-            }
+            println!("Successfully built to {}", output_path.display());
+
             if *log {
                 println!("With logging enabled.");
             }
         }
-        Commands::Run { name } => {
-            if let Some(name) = name {
-                println!("Running build: {}", name);
-            } else {
-                println!("Running latest build...");
-            }
+        Commands::Run { file } => {
+            let build_path = Path::new(file).with_extension("q.out");
+            println!("Running build: {}", build_path.display());
+
+            let content = fs::read_to_string(&build_path)
+                .expect("Should have been able to read the build artifact");
+            
+            let ast: Vec<AstNode> = serde_json::from_str(&content).expect("Failed to deserialize AST");
+
+            let mut interpreter = Interpreter::new();
+            interpreter.interpret(&ast);
         }
         Commands::Clear { name } => {
             if let Some(name) = name {
@@ -99,7 +107,6 @@ fn build_ast(mut pairs: pest::iterators::Pairs<Rule>) -> Vec<AstNode> {
             Rule::EOI => None,
             Rule::comment => None,
             _ => {
-                // This will now correctly report unhandled rules inside the file
                 println!("unhandled rule: {:?}", pair.as_rule());
                 None
             }
@@ -114,23 +121,38 @@ fn build_statement(pair: Pair<Rule>) -> Option<Statement> {
             let mut name = None;
             let mut data_type = None;
             let mut value = None;
-            for part in inner.into_inner() {
-                if let Rule::init_pair = part.as_rule() {
-                    let mut pair_inner = part.into_inner();
-                    let key = pair_inner.next().unwrap().as_str();
-                    let val = pair_inner.next().unwrap();
-                    match key {
-                        "\"name\"" => name = Some(val.as_str().to_string()),
-                        "\"datatype\"" => {
-                            data_type = Some(match val.as_str() {
-                                "string" => DataType::String,
-                                "number" => DataType::Number,
-                                "bool" => DataType::Bool,
-                                _ => unreachable!(),
-                            })
+            // Find init_pairs in the children
+            let mut inner_iter = inner.into_inner();
+            let init_pairs = inner_iter.find(|p| p.as_rule() == Rule::init_pairs);
+            if let Some(init_pairs) = init_pairs {
+                for part in init_pairs.into_inner() {
+                    if part.as_rule() == Rule::init_pair {
+                        // The init_pair only contains the value part (the key is consumed by the alternative match)
+                        // We determine which alternative matched by looking at the child's rule type
+                        let mut pair_inner = part.into_inner();
+                        if let Some(val_pair) = pair_inner.next() {
+                            match val_pair.as_rule() {
+                                Rule::variable_type => {
+                                    // This is the "type" alternative - ignore for now
+                                }
+                                Rule::identifier => {
+                                    // This is the "name" alternative
+                                    name = Some(val_pair.as_str().to_string());
+                                }
+                                Rule::datatype => {
+                                    data_type = Some(match val_pair.as_str() {
+                                        "string" => DataType::String,
+                                        "number" => DataType::Number,
+                                        "bool" => DataType::Bool,
+                                        _ => unreachable!(),
+                                    })
+                                }
+                                Rule::value => {
+                                    value = Some(build_expression(val_pair));
+                                }
+                                _ => {}
+                            }
                         }
-                        "\"value\"" => value = Some(build_expression(val)),
-                        _ => {}
                     }
                 }
             }
@@ -143,15 +165,23 @@ fn build_statement(pair: Pair<Rule>) -> Option<Statement> {
         Rule::system_set => {
             let mut name = None;
             let mut value = None;
-            for part in inner.into_inner() {
-                if let Rule::set_pair = part.as_rule() {
-                    let mut pair_inner = part.into_inner();
-                    let key = pair_inner.next().unwrap().as_str();
-                    let val = pair_inner.next().unwrap();
-                    match key {
-                        "\"name\"" => name = Some(val.as_str().to_string()),
-                        "\"value\"" => value = Some(build_expression(val)),
-                        _ => {}
+            let mut inner_iter = inner.into_inner();
+            let set_pairs = inner_iter.find(|p| p.as_rule() == Rule::set_pairs);
+            if let Some(set_pairs) = set_pairs {
+                for part in set_pairs.into_inner() {
+                    if part.as_rule() == Rule::set_pair {
+                        let mut pair_inner = part.into_inner();
+                        if let Some(val_pair) = pair_inner.next() {
+                            match val_pair.as_rule() {
+                                Rule::identifier => {
+                                    name = Some(val_pair.as_str().to_string());
+                                }
+                                Rule::value => {
+                                    value = Some(build_expression(val_pair));
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                 }
             }
@@ -163,16 +193,26 @@ fn build_statement(pair: Pair<Rule>) -> Option<Statement> {
         Rule::system_log => {
             let mut log_type = None;
             let mut message = None;
-            for part in inner.into_inner() {
-                if let Rule::log_pair = part.as_rule() {
-                    let mut pair_inner = part.into_inner();
-                    let key = pair_inner.next().unwrap();
-                    let val = pair_inner.next().unwrap();
-                    match key.as_str() {
-                        "\"type\"" => log_type = Some(val.as_str().to_string()),
-                        "\"message\"" => message = Some(build_expression(val)),
-                        "arguments" => { /* ignore for now */ }
-                        _ => {}
+            let mut inner_iter = inner.into_inner();
+            let log_pairs = inner_iter.find(|p| p.as_rule() == Rule::log_pairs);
+            if let Some(log_pairs) = log_pairs {
+                for part in log_pairs.into_inner() {
+                    if part.as_rule() == Rule::log_pair {
+                        let mut pair_inner = part.into_inner();
+                        if let Some(val_pair) = pair_inner.next() {
+                            match val_pair.as_rule() {
+                                Rule::log_type => {
+                                    log_type = Some(val_pair.as_str().to_string());
+                                }
+                                Rule::expression => {
+                                    message = Some(build_expression(val_pair));
+                                }
+                                Rule::arguments => {
+                                    // Ignore arguments for now
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                 }
             }
@@ -210,22 +250,31 @@ fn build_statement(pair: Pair<Rule>) -> Option<Statement> {
         Rule::system_exec => {
             let mut name = None;
             let mut args = vec![];
-            for part in inner.into_inner() {
-                if let Rule::exec_pair = part.as_rule() {
-                    let mut pair_inner = part.into_inner();
-                    let key = pair_inner.next().unwrap();
-                    let val = pair_inner.next().unwrap();
-                    match key.as_str() {
-                        "\"name\"" => name = Some(val.as_str().to_string()),
-                        "parameters" => {
-                            args = val.into_inner().map(|arg_pair| {
-                                let mut inner_arg = arg_pair.into_inner();
-                                let arg_name = inner_arg.next().unwrap().as_str().to_string();
-                                let arg_val = build_expression(inner_arg.next().unwrap());
-                                (arg_name, arg_val)
-                            }).collect();
+            let mut inner_iter = inner.into_inner();
+            let exec_pairs = inner_iter.find(|p| p.as_rule() == Rule::exec_pairs);
+            if let Some(exec_pairs) = exec_pairs {
+                for part in exec_pairs.into_inner() {
+                    if part.as_rule() == Rule::exec_pair {
+                        let mut pair_inner = part.into_inner();
+                        if let Some(val_pair) = pair_inner.next() {
+                            match val_pair.as_rule() {
+                                Rule::identifier => {
+                                    name = Some(val_pair.as_str().to_string());
+                                }
+                                Rule::exec_params => {
+                                    args = val_pair.into_inner().map(|arg_pair| {
+                                        let mut inner_arg = arg_pair.into_inner();
+                                        let arg_name = inner_arg.next().unwrap().as_str().to_string();
+                                        let arg_val = build_expression(inner_arg.next().unwrap());
+                                        (arg_name, arg_val)
+                                    }).collect();
+                                }
+                                Rule::exec_type => {
+                                    // Ignore type for now
+                                }
+                                _ => {}
+                            }
                         }
-                        _ => {}
                     }
                 }
             }
@@ -233,6 +282,10 @@ fn build_statement(pair: Pair<Rule>) -> Option<Statement> {
                 name: name.unwrap(),
                 args,
             }))
+        }
+        Rule::return_statement => {
+            let inner = inner.into_inner().next().unwrap();
+            Some(Statement::Return(build_expression(inner)))
         }
         Rule::comment => None,
         Rule::system_include => Some(Statement::SystemInclude), // Placeholder
@@ -247,10 +300,11 @@ fn build_expression(pair: Pair<Rule>) -> Expression {
             match inner.as_rule() {
                 Rule::string => {
                     let s = inner.as_str();
-                    Expression::Value(Value::String(s[1..s.len()-1].to_string()))
+                    Expression::Value(Value::String(s[1..s.len() - 1].to_string()))
                 }
                 Rule::number => Expression::Value(Value::Number(inner.as_str().parse().unwrap())),
                 Rule::boolean => Expression::Value(Value::Bool(inner.as_str().parse().unwrap())),
+                Rule::null => Expression::Value(Value::Null),
                 _ => unreachable!(),
             }
         }

@@ -33,7 +33,6 @@ impl Interpreter {
     }
 
     fn execute_statement(&mut self, stmt: &Statement) {
-        println!("Executing: {:?}", stmt);
         match stmt {
             Statement::SystemInit(var_decl) => {
                 let value = var_decl.value.as_ref().map_or(Value::Null, |v| self.evaluate_expression(v));
@@ -57,6 +56,7 @@ impl Interpreter {
             Statement::SystemExec(func_call) => {
                 self.execute_function_call(func_call);
             }
+            Statement::Return(_) => { /* Not implemented */ }
             Statement::SystemInclude => { /* Not implemented */ }
         }
     }
