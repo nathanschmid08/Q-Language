@@ -14,10 +14,11 @@ pub struct Program {
 pub enum Instruction {
     // Variable operations
     InitVar { symbol_id: u32, value: Value },
-    SetVar { symbol_id: u32, value: Value },
+    SetVar { symbol_id: u32, value: Value }, // For compile-time constants
+    SetVarFromStack { symbol_id: u32 }, // For runtime expressions
     
     // Function operations
-    DeclareFunc { symbol_id: u32, param_count: u32, body_start: u32, body_end: u32 },
+    DeclareFunc { symbol_id: u32, param_count: u32, param_symbol_ids: Vec<u32>, body_start: u32, body_end: u32 },
     CallFunc { symbol_id: u32, arg_count: u32 },
     
     // Expression operations
@@ -112,8 +113,9 @@ pub fn ast_to_ir(ast: &[AstNode]) -> Program {
                     }
                     Statement::SystemSet(var_assign) => {
                         let symbol_id = symbol_map[&var_assign.name];
-                        let value = expression_to_value(&var_assign.value);
-                        instructions.push(Instruction::SetVar { symbol_id, value });
+                        // Evaluate expression and leave result on stack
+                        expression_to_instructions(&var_assign.value, &mut instructions, &symbol_map);
+                        instructions.push(Instruction::SetVarFromStack { symbol_id });
                     }
                     Statement::SystemLog(log) => {
                         let log_type = match log.log_type.to_lowercase().as_str() {
@@ -129,13 +131,42 @@ pub fn ast_to_ir(ast: &[AstNode]) -> Program {
                     }
                     Statement::FunctionDeclaration(func_decl) => {
                         let symbol_id = symbol_map[&func_decl.name];
+                        
+                        // Create symbol IDs for function parameters (they need their own scope)
+                        let mut param_symbol_ids = Vec::new();
+                        let mut func_symbol_map = symbol_map.clone();
+                        for (param_name, _) in &func_decl.params {
+                            let param_symbol_id = symbol_counter;
+                            symbol_counter += 1;
+                            param_symbol_ids.push(param_symbol_id);
+                            func_symbol_map.insert(param_name.clone(), param_symbol_id);
+                            
+                            // Add to symbol table
+                            symbol_table.push(Symbol {
+                                id: param_symbol_id,
+                                name: param_name.clone(),
+                                kind: SymbolKind::Variable {
+                                    data_type: func_decl.params.iter()
+                                        .find(|(name, _)| name == param_name)
+                                        .map(|(_, dt)| dt.clone())
+                                        .unwrap_or(DataType::String),
+                                },
+                            });
+                        }
+                        
                         let body_start = instructions.len() as u32;
                         for body_stmt in &func_decl.body {
-                            statement_to_instructions(body_stmt, &mut instructions, &symbol_map);
+                            statement_to_instructions(body_stmt, &mut instructions, &func_symbol_map);
                         }
                         let body_end = instructions.len() as u32;
                         let param_count = func_decl.params.len() as u32;
-                        instructions.push(Instruction::DeclareFunc { symbol_id, param_count, body_start, body_end });
+                        instructions.push(Instruction::DeclareFunc { 
+                            symbol_id, 
+                            param_count, 
+                            param_symbol_ids: param_symbol_ids.clone(),
+                            body_start, 
+                            body_end 
+                        });
                     }
                     Statement::SystemExec(func_call) => {
                         let symbol_id = symbol_map[&func_call.name];
@@ -211,8 +242,9 @@ fn statement_to_instructions(
         }
         Statement::SystemSet(var_assign) => {
             let symbol_id = symbol_map[&var_assign.name];
-            let value = expression_to_value(&var_assign.value);
-            instructions.push(Instruction::SetVar { symbol_id, value });
+            // Evaluate expression and leave result on stack
+            expression_to_instructions(&var_assign.value, instructions, symbol_map);
+            instructions.push(Instruction::SetVarFromStack { symbol_id });
         }
         Statement::SystemLog(log) => {
             let log_type = match log.log_type.to_lowercase().as_str() {
