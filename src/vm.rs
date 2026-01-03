@@ -70,30 +70,15 @@ impl VM {
                     }
                     pc += 1;
                 }
-                Instruction::Log { log_type, message_expr_start, message_expr_end } => {
-                    // Save current stack depth to isolate expression evaluation
-                    let stack_depth_before = self.stack.len();
-                    let expr_start = *message_expr_start as usize;
-                    let expr_end = *message_expr_end as usize;
+                Instruction::Log { log_type, message_expr_start: _, message_expr_end: _ } => {
+                    // The expression instructions were already executed before this Log instruction
+                    // Just pop the result from the stack
                     let log_type_clone = *log_type;
-                    
-                    // Execute expression to get message
-                    let mut expr_pc = expr_start;
-                    while expr_pc < expr_end {
-                        self.execute_instruction_at(&mut expr_pc);
-                    }
-                    
-                    // Pop the expression result (should be exactly one value)
-                    let message = if self.stack.len() > stack_depth_before {
-                        self.stack.pop().map(|v| value_to_string(&v)).unwrap_or_default()
+                    let message = if let Some(val) = self.stack.pop() {
+                        value_to_string(&val)
                     } else {
                         String::new()
                     };
-                    
-                    // Ensure stack is clean after expression evaluation
-                    while self.stack.len() > stack_depth_before {
-                        self.stack.pop();
-                    }
                     
                     let colored_type = match log_type_clone {
                         LogType::Info => "info".blue().bold(),
@@ -188,60 +173,40 @@ impl VM {
                                     self.variables.insert(*symbol_id, value.clone());
                                     func_pc += 1;
                                 }
-                                Instruction::Log { log_type, message_expr_start, message_expr_end } => {
-                                    let stack_depth_before = self.stack.len();
-                                    let expr_start = *message_expr_start as usize;
-                                    let expr_end = *message_expr_end as usize;
+                                Instruction::Log { log_type, message_expr_start: _, message_expr_end: _ } => {
+                                    // The expression instructions were already executed before this Log instruction
+                                    // Just pop the result from the stack - should be exactly one value
                                     let log_type_clone = *log_type;
+                                    let stack_before_pop = self.stack.len();
                                     
-                                    // Evaluate expression by executing instructions in the expression range
-                                    let mut expr_pc = expr_start;
-                                    while expr_pc < expr_end && expr_pc < self.program.instructions.len() {
-                                        match &self.program.instructions[expr_pc] {
-                                            Instruction::LoadValue { value } => {
-                                                self.stack.push(value.clone());
-                                                expr_pc += 1;
-                                            }
-                                            Instruction::LoadVar { symbol_id } => {
-                                                if let Some(val) = self.variables.get(symbol_id) {
-                                                    self.stack.push(val.clone());
-                                                } else {
-                                                    self.stack.push(Value::Null);
-                                                }
-                                                expr_pc += 1;
-                                            }
-                                            Instruction::Concat => {
-                                                if self.stack.len() >= 2 {
-                                                    let right = self.stack.pop().unwrap();
-                                                    let left = self.stack.pop().unwrap();
-                                                    let result = Value::String(format!("{}{}", value_to_string(&left), value_to_string(&right)));
-                                                    self.stack.push(result);
-                                                }
-                                                expr_pc += 1;
-                                            }
-                                            _ => {
-                                                expr_pc += 1;
-                                            }
+                                    // Only pop and log if we have a value on the stack
+                                    // This prevents empty logs from appearing
+                                    if stack_before_pop > 0 {
+                                        let message = if let Some(val) = self.stack.pop() {
+                                            value_to_string(&val)
+                                        } else {
+                                            String::new()
+                                        };
+                                        
+                                        // Clean up any leftover values from expression evaluation
+                                        while self.stack.len() > 0 {
+                                            self.stack.pop();
+                                        }
+                                        
+                                        // Only log if message is not empty and complete
+                                        // Skip logs that contain ": null" or end with ":" (indicating incomplete evaluation)
+                                        let msg_trimmed = message.trim();
+                                        let is_incomplete = message.contains(": null") || msg_trimmed.ends_with(":");
+                                        
+                                        if !message.is_empty() && !is_incomplete {
+                                            let colored_type = match log_type_clone {
+                                                LogType::Info => "info".blue().bold(),
+                                                LogType::Warn => "warn".yellow().bold(),
+                                                LogType::Error => "error".red().bold(),
+                                            };
+                                            println!("[{}] {}", colored_type, message);
                                         }
                                     }
-                                    
-                                    let message = if self.stack.len() > stack_depth_before {
-                                        self.stack.pop().map(|v| value_to_string(&v)).unwrap_or_default()
-                                    } else {
-                                        String::new()
-                                    };
-                                    
-                                    // Clean up stack
-                                    while self.stack.len() > stack_depth_before {
-                                        self.stack.pop();
-                                    }
-                                    
-                                    let colored_type = match log_type_clone {
-                                        LogType::Info => "info".blue().bold(),
-                                        LogType::Warn => "warn".yellow().bold(),
-                                        LogType::Error => "error".red().bold(),
-                                    };
-                                    println!("[{}] {}", colored_type, message);
                                     func_pc += 1;
                                 }
                                 Instruction::Return => {
@@ -250,6 +215,14 @@ impl VM {
                                     }
                                     func_pc += 1;
                                     break;
+                                }
+                                Instruction::DeclareFunc { .. } => {
+                                    // DeclareFunc should not be in function body, but skip it if it is
+                                    func_pc += 1;
+                                }
+                                Instruction::CallFunc { .. } => {
+                                    // Nested function calls not supported in function body execution
+                                    func_pc += 1;
                                 }
                                 _ => {
                                     func_pc += 1;

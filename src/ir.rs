@@ -217,6 +217,9 @@ fn expression_to_instructions(
             let name = parts[0];
             if let Some(&symbol_id) = symbol_map.get(name) {
                 instructions.push(Instruction::LoadVar { symbol_id });
+            } else {
+                // Variable not found - push null as fallback
+                instructions.push(Instruction::LoadValue { value: Value::Null });
             }
         }
         Expression::Concat(left, right) => {
