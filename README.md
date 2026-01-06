@@ -87,8 +87,44 @@ system.exec{
         param2 => 3
     }
 };
+
+system.input{
+    "prompt": "Wie alt bist du?",
+    "datatype": number,
+    "store": "userAge" // speichert direkt in Variable userAge
+};
+
+// Create a GUI
+system.gui{
+    "type": "window",
+    "name": "main",
+    "title": "Meine App",
+    "width": 400,
+    "height": 300
+};
 ```
 
+## Compile errors idea
+
+### Compile
+
+```cmd
+[QSYN-ERR-001] UnknownCommand
+    Unknown Command 'system.inni' at ln. 12
+    --> Did you mean 'system.init'?
+
+[SYSTEM] Refused to build test.qla. Fix errors first.
+```
+
+### Runtime
+
+```cmd
+[QRT-ERR-001] DivisionByZero
+    Division By Zero not allowed at ln. 27
+
+[SYSTEM] Refused to continue executing.
+[EXIT] Programm exited with code 1
+```
 ---
 
 ## Progress Update
@@ -124,3 +160,4 @@ This will parse the `test.q` file, build the AST, and execute it with the interp
 *   **Error Handling:** Implement robust error handling for both parsing and interpretation.
 *   **Feature Expansion:** Add support for more complex features like arrays, modules (`system.include`), and more built-in functions.
 *   **Code Generation:** As an alternative to interpretation, implement a code generator to compile Q code to another target, such as Rust or LLVM IR.
+
