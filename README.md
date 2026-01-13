@@ -13,13 +13,13 @@
 quentin build
 
 # Build one file only
-quentin build file.q
+quentin build file.qla
 
 # Build with logs
 quentin build --log
 
 # Run the app
-quentin run latest
+quentin run file.qla
 
 # Clear build cache
 quentin clear cache
